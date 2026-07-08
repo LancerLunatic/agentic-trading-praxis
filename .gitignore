@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+venv/
+.langgraph_api/
+*.log
+scratch/
+backtest_results.csv
