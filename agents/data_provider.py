@@ -57,14 +57,22 @@ def black_scholes_greeks(S: float, K: float, T: float, r: float, sigma: float, o
 
 def data_provider_node(state: AgentState) -> AgentState:
     ticker = state.get("ticker")
+    timestamp = state.get("timestamp")
+    
     if not ticker:
         raise ValueError("No ticker provided in the graph input state!")
         
+    # Robust unpacking if ticker is passed as a list from LangGraph console
     if isinstance(ticker, list):
-        ticker = ticker[0] if len(ticker) > 0 else "SPY"
-    ticker = str(ticker).strip().upper()
+        if len(ticker) > 0:
+            ticker = ticker[0]
+        else:
+            raise ValueError("Ticker list is empty!")
+            
+    if ticker:
+        ticker = str(ticker).strip().upper()
 
-    print(f"--- FETCHING DATA FOR: {ticker} ---")
+    print(f"--- FETCHING DATA FOR: {ticker} (timestamp: {timestamp}) ---")
 
     # 1. Fetch current price of the underlying ticker
     actual_price = 0.0
@@ -82,8 +90,18 @@ def data_provider_node(state: AgentState) -> AgentState:
                 secret_key=secret_key,
                 base_url="https://paper-api.alpaca.markets"
             )
-            latest_trade = api.get_latest_trade(ticker)
-            actual_price = float(latest_trade.price)
+            from alpaca_trade_api.rest import TimeFrame
+            if timestamp:
+                # Backtesting mode: Fetch historical bars ending on timestamp
+                ticker_bars = api.get_bars(ticker, TimeFrame.Day, end=timestamp, limit=1).df
+                if not ticker_bars.empty:
+                    actual_price = float(ticker_bars['close'].iloc[-1])
+                else:
+                    actual_price = 0.0
+            else:
+                # Live mode: Fetch the latest trade data
+                latest_trade = api.get_latest_trade(ticker)
+                actual_price = float(latest_trade.price)
         except Exception as e:
             print(f"Alpaca REST price check failed: {e}. Falling back to mock price.")
             use_mock_data = True
@@ -94,7 +112,30 @@ def data_provider_node(state: AgentState) -> AgentState:
 
     print(f"--- SUCCESS: {ticker} price is ${actual_price:.2f} ---")
 
-    # 2. Fetch/Generate Option Chain
+    # 2. Fetch/Compute SPY 200-day Simple Moving Average (SMA) (from Sprint 3)
+    spy_200_sma = 0.0
+    if not use_mock_data:
+        try:
+            from alpaca_trade_api.rest import TimeFrame
+            if timestamp:
+                spy_bars = api.get_bars("SPY", TimeFrame.Day, end=timestamp, limit=200).df
+            else:
+                spy_bars = api.get_bars("SPY", TimeFrame.Day, limit=200).df
+                
+            if not spy_bars.empty:
+                spy_200_sma = float(spy_bars['close'].mean())
+            else:
+                spy_200_sma = 0.0
+        except Exception as e:
+            print(f"Alpaca SPY SMA fetch failed: {e}.")
+            
+    if use_mock_data or spy_200_sma == 0.0:
+        # Fallback default
+        spy_200_sma = 405.0
+
+    print(f"--- SUCCESS: SPY 200-day SMA is ${spy_200_sma:.2f} ---")
+
+    # 3. Fetch/Generate Option Chain
     option_chain = {}
     
     if not use_mock_data:
@@ -110,7 +151,6 @@ def data_provider_node(state: AgentState) -> AgentState:
                 res_data = response.json()
                 snapshots = res_data.get("snapshots", {})
                 for contract_symbol, snap in snapshots.items():
-                    # Parse contract symbol
                     match = re.match(r"^([A-Z]+)(\d{6})([CP])(\d{8})$", contract_symbol)
                     if match:
                         und, date_part, cp, strike_part = match.groups()
@@ -149,13 +189,11 @@ def data_provider_node(state: AgentState) -> AgentState:
     # If option_chain is empty, run the mathematical Black-Scholes generator
     if not option_chain:
         print("--- GENERATING BLACK-SCHOLES OPTION CHAIN ---")
-        # Generate options for two expiration dates: 10 days and 30 days
         expirations = [("2026-07-17", 10/365), ("2026-08-07", 30/365)]
         strikes = [float(k) for k in range(int(actual_price - 20), int(actual_price + 25), 5)]
         
         for exp_date, T in expirations:
             for strike in strikes:
-                # IV skew/smile: higher IV OTM
                 dist_pct = (actual_price - strike) / actual_price
                 iv = 0.20 + 0.15 * (dist_pct ** 2)
                 r = 0.045
@@ -202,7 +240,7 @@ def data_provider_node(state: AgentState) -> AgentState:
                     }
                 }
                 
-    # 3. Initialize state parameters & pre-populate complex inventory if empty
+    # 4. Initialize state parameters & pre-populate complex inventory if empty
     cash = state.get("cash", 100000.0)
     portfolio_equity = state.get("portfolio_equity", 100000.0)
     margin_utilization = state.get("margin_utilization", 0.0)
@@ -210,13 +248,10 @@ def data_provider_node(state: AgentState) -> AgentState:
     portfolio_inventory = state.get("portfolio_inventory")
     if not portfolio_inventory:
         print("--- INITIALIZING COMPLEX PORTFOLIO INVENTORY ---")
-        # Let's pick option contracts from our chain to build a short vertical put spread
-        # E.g. Short 2 puts at 415, Long 2 puts at 410 expiring in 10 days
         exp_date = "2026-07-17"
-        short_strike = actual_price - 5.0  # e.g., 415
-        long_strike = actual_price - 10.0   # e.g., 410
+        short_strike = actual_price - 5.0
+        long_strike = actual_price - 10.0
         
-        # Round strikes to increments of 5
         short_strike = round(short_strike / 5.0) * 5.0
         long_strike = round(long_strike / 5.0) * 5.0
         
@@ -279,11 +314,15 @@ def data_provider_node(state: AgentState) -> AgentState:
         
     return {
         "price": actual_price,
+        "current_price": actual_price,
         "ticker": ticker,
+        "spy_200_sma": spy_200_sma,
+        "reflection_count": state.get("reflection_count") or 0,
+        "timestamp": timestamp,
         "option_chain": option_chain,
         "portfolio_inventory": portfolio_inventory,
         "cash": cash,
         "portfolio_equity": portfolio_equity,
         "margin_utilization": margin_utilization,
         "portfolio_greeks": state.get("portfolio_greeks", {"delta": 0.0, "gamma": 0.0, "theta": 0.0})
-    }
+    }

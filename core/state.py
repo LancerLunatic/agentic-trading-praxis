@@ -18,7 +18,6 @@ class AgentState(TypedDict):
     evaluation_critique: str
     confidence_score: float  # Scale of 0.0 to 1.0
     risk_approved: bool
-    
     # Sprint 4: Derivatives and Position Tracking
     portfolio_inventory: List[Dict[str, Any]]  # List of current positions (stock or options)
     margin_utilization: float                  # Current margin in use (USD)
@@ -28,3 +27,12 @@ class AgentState(TypedDict):
     option_chain: Dict[str, Any]               # Option chain data
     target_legs: Optional[List[Dict[str, Any]]] # Proposed options legs to trade
 
+    # Tracing / Loop control
+    loop_count: Optional[int]
+    loop_failed: Optional[bool]
+    # Reflector Loop and Strategy Fields
+    reflection_count: int
+    spy_200_sma: float
+    current_price: float
+    # Backtesting
+    timestamp: Optional[str]

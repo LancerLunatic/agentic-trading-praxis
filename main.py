@@ -18,6 +18,15 @@ def router(state: AgentState):
         return "execute_trade"
     return END
 
+def evaluator_router(state: AgentState):
+    # Route back to analyst if confidence is low, unless max retries exceeded
+    confidence = state.get("confidence_score", 1.0)
+    reflection_count = state.get("reflection_count", 0)
+    
+    if confidence < 0.7 and reflection_count < 3:
+        return "retry"
+    return "proceed"
+
 # 2. Initialize the Graph
 workflow = StateGraph(AgentState)
 
@@ -32,7 +41,17 @@ workflow.add_node("evaluator", evaluator_node)
 workflow.add_edge(START, "data_provider")
 workflow.add_edge("data_provider", "analyst")
 workflow.add_edge("analyst", "evaluator")         # Feed analysis to evaluator
-workflow.add_edge("evaluator", "risk_manager")    # Feed evaluation to risk manager
+
+# Replace static edge from evaluator with a conditional edge for looping/retry
+workflow.add_conditional_edges(
+    "evaluator",
+    evaluator_router,
+    {
+        "retry": "analyst",
+        "proceed": "risk_manager"
+    }
+)
+
 workflow.add_edge("risk_manager", END)
 
 # Use add_conditional_edges to decide if we proceed to execution or exit
@@ -46,3 +65,7 @@ workflow.add_conditional_edges(
 )
 
 app = workflow.compile()
+
+# Apply the custom telemetry patch to the compiled app for cost-conscious tracing
+from core.telemetry import patch_app_with_telemetry
+app = patch_app_with_telemetry(app)
