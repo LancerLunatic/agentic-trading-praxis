@@ -8,6 +8,7 @@ from agents.analyst import analyst_node
 from agents.risk_manager import risk_manager_node
 from agents.data_provider import data_provider_node
 from agents.executor import execute_trade_node
+from agents.evaluator import evaluator_node
 
 # 1. Define the routing logic
 def router(state: AgentState):

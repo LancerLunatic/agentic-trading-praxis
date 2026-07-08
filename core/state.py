@@ -1,6 +1,5 @@
-from typing import TypedDict, List, Optional
+from typing import TypedDict, List, Optional, Dict, Any
 from pydantic import BaseModel
-from typing import TypedDict, List, Dict, Any
 
 # This is your "Whiteboard" - the memory for your agent
 class AgentState(TypedDict):
@@ -19,3 +18,13 @@ class AgentState(TypedDict):
     evaluation_critique: str
     confidence_score: float  # Scale of 0.0 to 1.0
     risk_approved: bool
+    
+    # Sprint 4: Derivatives and Position Tracking
+    portfolio_inventory: List[Dict[str, Any]]  # List of current positions (stock or options)
+    margin_utilization: float                  # Current margin in use (USD)
+    portfolio_equity: float                    # Net asset value of the portfolio (USD)
+    cash: float                                # Available cash balance (USD)
+    portfolio_greeks: Dict[str, float]         # Combined delta, theta, gamma
+    option_chain: Dict[str, Any]               # Option chain data
+    target_legs: Optional[List[Dict[str, Any]]] # Proposed options legs to trade
+
