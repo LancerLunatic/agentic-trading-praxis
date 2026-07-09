@@ -36,3 +36,15 @@ class AgentState(TypedDict):
     current_price: float
     # Backtesting
     timestamp: Optional[str]
+
+    # Milestone 1: State Schema Extension Fields
+    vix_price: float
+    regime: str  # "BULL" or "BEAR"
+    screened_candidates: List[str]
+    proposed_trades: List[Dict[str, Any]]
+    previous_iv: Dict[str, float]
+    start_of_day_equity: float
+    daily_slippage: float
+    liquidations: List[Dict[str, Any]]
+    defensive_cash_mode: Optional[bool]
+

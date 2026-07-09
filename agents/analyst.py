@@ -4,7 +4,23 @@ from langchain_core.messages import SystemMessage, HumanMessage
 import json
 
 # Initialize the LLM
-llm = ChatGoogleGenerativeAI(model="gemini-3.5-flash")
+import os
+if os.environ.get("GOOGLE_API_KEY") == "mock":
+    from unittest.mock import MagicMock
+    llm = MagicMock()
+    mock_response = MagicMock()
+    mock_response.content = (
+        '{\n'
+        '  "signal": "BUY",\n'
+        '  "strategy": "BULL_PUT_SPREAD",\n'
+        '  "strike_offset_short": 5.0,\n'
+        '  "strike_offset_long": 10.0,\n'
+        '  "reason": "Sufficient IV velocity and bullish option structure"\n'
+        '}'
+    )
+    llm.invoke.return_value = mock_response
+else:
+    llm = ChatGoogleGenerativeAI(model="gemini-3.5-flash")
 
 def analyst_node(state: AgentState) -> dict:
     ticker = state.get("ticker", "SPY")
@@ -12,7 +28,110 @@ def analyst_node(state: AgentState) -> dict:
     option_chain = state.get("option_chain", {}) or {}
     critique = state.get("evaluation_critique")
     
-    # 1. Instruct the LLM to analyze the stock and select an appropriate strategy (Stock vs. Options spread)
+    # 1. VIX regime and defensive mode check
+    vix_price = state.get("vix_price")
+    regime = state.get("regime", "BULL")
+    defensive_cash_mode = state.get("defensive_cash_mode", False)
+    
+    if (vix_price is not None and vix_price > 20.50) or regime == "BEAR" or defensive_cash_mode:
+        return {
+            "regime": "BEAR",
+            "signal": "HOLD",
+            "proposed_trades": [],
+            "target_legs": [],
+            "risk_reason": "BEAR regime, defensive cash mode, or VIX shock active. Trading halted.",
+            "evaluation_critique": ""
+        }
+    
+    # Helper function to find ATM option IV for a given symbol
+    def get_atm_iv(sym, price_val):
+        t_options = []
+        for opt_sym, opt in option_chain.items():
+            if opt.get("underlying_symbol") == sym:
+                t_options.append(opt)
+            elif opt_sym.startswith(sym) and len(opt_sym) >= len(sym) + 6 and opt_sym[len(sym):len(sym)+6].isdigit():
+                t_options.append(opt)
+        if not t_options:
+            return None
+        
+        # Find option with strike closest to price_val
+        # Default to the strike of the first option if price_val is None
+        ref_price = price_val if price_val is not None else t_options[0].get("strike", 0.0)
+        atm_opt = min(t_options, key=lambda x: abs(x.get("strike", 0.0) - ref_price))
+        
+        # Get IV
+        if "greeks" in atm_opt and "iv" in atm_opt["greeks"]:
+            return atm_opt["greeks"]["iv"]
+        elif "iv" in atm_opt:
+            return atm_opt["iv"]
+        return None
+
+    # 4. Candidate ranking
+    screened_candidates = state.get("screened_candidates", []) or []
+    previous_iv_dict = dict(state.get("previous_iv") or {})
+    candidate_velocities = {}
+    
+    for cand in screened_candidates:
+        cand_price = price if cand == ticker else None
+        cand_current_iv = get_atm_iv(cand, cand_price)
+        if cand_current_iv is not None:
+            orig_prev_iv = state.get("previous_iv", {}).get(cand) if state.get("previous_iv") else None
+            if orig_prev_iv is not None:
+                velocity = cand_current_iv - orig_prev_iv
+                if velocity > 0:
+                    candidate_velocities[cand] = velocity
+            previous_iv_dict[cand] = cand_current_iv
+
+    ranked_candidates = sorted(candidate_velocities.keys(), key=lambda c: abs(candidate_velocities[c]), reverse=True)
+    ranked_candidates = ranked_candidates[:15]
+
+    # Initialize signal, strategy, reason
+    signal = "BUY"
+    strategy = "BULL_PUT_SPREAD"
+    reason = "Bullish outlook."
+
+    # 2. Call/Put volume ratio constraint
+    call_put_ratio = state.get("call_put_ratio")
+    if call_put_ratio is not None and call_put_ratio < 1.10:
+        signal = "HOLD"
+        strategy = "HOLD"
+        reason = f"Call/Put ratio {call_put_ratio:.2f} is below 1.10 constraint."
+
+    # 3. IV velocity screening for the primary ticker
+    primary_current_iv = get_atm_iv(ticker, price)
+    if primary_current_iv is not None:
+        orig_prev_iv = state.get("previous_iv", {}).get(ticker) if state.get("previous_iv") else None
+        if orig_prev_iv is not None:
+            primary_velocity = primary_current_iv - orig_prev_iv
+            if primary_velocity <= 0:
+                signal = "HOLD"
+                strategy = "HOLD"
+                reason = f"IV velocity for {ticker} is stagnant or decreased ({primary_current_iv:.4f} <= {orig_prev_iv:.4f})."
+        previous_iv_dict[ticker] = primary_current_iv
+
+    target_legs = None
+
+    if signal == "HOLD":
+        new_rec = {
+            "signal": signal,
+            "strategy": strategy,
+            "reason": reason,
+            "price": price,
+            "target_legs": None
+        }
+        recs = (state.get("analysis_recs") or []) + [new_rec]
+        return {
+            "signal": signal,
+            "risk_reason": f"Strategy: {strategy}. Rationale: {reason}",
+            "target_legs": None,
+            "analysis_recs": recs,
+            "evaluation_critique": "",
+            "regime": regime,
+            "ranked_candidates": ranked_candidates,
+            "previous_iv": previous_iv_dict
+        }
+
+    # 5. LLM proposal: If signal is not "HOLD", invoke ChatGoogleGenerativeAI
     system_prompt = (
         "You are an expert derivatives analyst. Analyze the market for the given ticker and choose one of these strategies:\n"
         "1. 'BULL_PUT_SPREAD' (Moderately bullish/income strategy: sell a put below the price, buy a put further OTM for protection)\n"
@@ -30,7 +149,6 @@ def analyst_node(state: AgentState) -> dict:
     
     prompt = f"Current stock price of {ticker} is ${price:.2f}. Suggest a trade decision."
     
-    # Ingest critique if present from a previous run
     if critique:
         prompt += (
             f"\n\nCRITICAL STRATEGY CONSTRAINT (PREVIOUS CRITIQUE):\n{critique}\n\n"
@@ -43,7 +161,6 @@ def analyst_node(state: AgentState) -> dict:
             HumanMessage(content=prompt)
         ])
         
-        # Extract the string content safely from the AIMessage object
         content = response.content if hasattr(response, 'content') else str(response)
         if isinstance(content, list):
             parts = []
@@ -56,7 +173,6 @@ def analyst_node(state: AgentState) -> dict:
         else:
             content = str(content)
             
-        # Clean potential JSON markdown blocks
         clean_content = content.replace("```json", "").replace("```", "").strip()
         data = json.loads(clean_content)
         
@@ -74,14 +190,11 @@ def analyst_node(state: AgentState) -> dict:
         offset_long = 10.0
         content = str(e)
         
-    target_legs = None
-    
     if signal == "BUY" and strategy == "BULL_PUT_SPREAD":
         target_short_strike = round((price - offset_short) / 5.0) * 5.0
         target_long_strike = round((price - offset_long) / 5.0) * 5.0
         
-        # Expiration date: find the first available in the option chain
-        expirations = sorted(list(set(opt["expiration_date"] for opt in option_chain.values())))
+        expirations = sorted(list(set(opt["expiration_date"] for opt in option_chain.values() if "expiration_date" in opt)))
         exp_date = expirations[0] if expirations else "2026-07-17"
         
         short_sym = f"{ticker}{exp_date.replace('-','')[2:]}P{str(int(target_short_strike*1000)).zfill(8)}"
@@ -90,7 +203,6 @@ def analyst_node(state: AgentState) -> dict:
         short_contract = option_chain.get(short_sym)
         long_contract = option_chain.get(long_sym)
         
-        # Fallback options generator if not found in chain
         if not short_contract:
             short_contract = {"contract_symbol": short_sym, "price": 3.0, "greeks": {"delta": -0.30, "gamma": 0.02, "theta": -0.08, "vega": 0.35, "iv": 0.20}}
         if not long_contract:
@@ -103,9 +215,9 @@ def analyst_node(state: AgentState) -> dict:
                 "type": "put",
                 "strike": target_short_strike,
                 "expiration_date": exp_date,
-                "quantity": -2, # Short 2 puts
-                "price": short_contract["price"],
-                "greeks": short_contract["greeks"]
+                "quantity": -2,
+                "price": short_contract.get("price", 3.0),
+                "greeks": short_contract.get("greeks", {"delta": -0.30, "gamma": 0.02, "theta": -0.08, "vega": 0.35, "iv": 0.20})
             },
             {
                 "symbol": long_sym,
@@ -113,9 +225,9 @@ def analyst_node(state: AgentState) -> dict:
                 "type": "put",
                 "strike": target_long_strike,
                 "expiration_date": exp_date,
-                "quantity": 2, # Long 2 puts (defined risk)
-                "price": long_contract["price"],
-                "greeks": long_contract["greeks"]
+                "quantity": 2,
+                "price": long_contract.get("price", 1.5),
+                "greeks": long_contract.get("greeks", {"delta": -0.15, "gamma": 0.01, "theta": -0.04, "vega": 0.20, "iv": 0.21})
             }
         ]
         print(f"Analyst proposed BULL_PUT_SPREAD: Short Put {short_sym} (at {target_short_strike}), Long Put {long_sym} (at {target_long_strike})")
@@ -128,14 +240,13 @@ def analyst_node(state: AgentState) -> dict:
                 "type": "stock",
                 "strike": None,
                 "expiration_date": None,
-                "quantity": 100, # Buy 100 shares
+                "quantity": 100,
                 "price": price,
                 "greeks": {"delta": 1.0, "gamma": 0.0, "theta": 0.0, "vega": 0.0, "iv": 0.0}
             }
         ]
         print(f"Analyst proposed LONG_STOCK: Buy 100 shares of {ticker} at {price}")
 
-    # Return updates including the recommendations history for the evaluator
     new_rec = {
         "signal": signal,
         "strategy": strategy,
@@ -150,5 +261,8 @@ def analyst_node(state: AgentState) -> dict:
         "risk_reason": f"Strategy: {strategy}. Rationale: {reason}",
         "target_legs": target_legs,
         "analysis_recs": recs,
-        "evaluation_critique": "" # Clear the critique field
+        "evaluation_critique": "",
+        "regime": regime,
+        "ranked_candidates": ranked_candidates,
+        "previous_iv": previous_iv_dict
     }

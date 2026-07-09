@@ -12,9 +12,7 @@ from agents.evaluator import evaluator_node
 
 # 1. Define the routing logic
 def router(state: AgentState):
-    # If the risk_manager approved it (or it didn't need approval), 
-    # we proceed to the 'execution' node. If not, we end.
-    if state.get("user_approved", False):
+    if state.get("user_approved", False) or len(state.get("liquidations", [])) > 0:
         return "execute_trade"
     return END
 

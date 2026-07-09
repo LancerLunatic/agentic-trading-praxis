@@ -60,14 +60,44 @@ def run_backtest(ticker="SPY", start_date="2022-01-01", end_date="2022-03-01", i
         historical_prices = {d: float(prices[i]) for i, d in enumerate(trading_days)}
 
     # 2. Backtest simulation loop
-    cash = initial_cash
-    shares = 0
     portfolio_history = []
+    
+    # Initialize the portfolio state that feeds from day to day
+    state_input = {
+        "ticker": ticker,
+        "quantity": 1,
+        "timestamp": None,
+        "cash": initial_cash,
+        "portfolio_inventory": [],
+        "portfolio_equity": initial_cash,
+        "regime": "BULL",
+        "defensive_cash_mode": False,
+        "previous_iv": {},
+        "open_orders": []
+    }
     
     logger.info("Data loaded successfully. Starting agentic loop simulation.", days_count=len(trading_days))
     
     for i, date_str in enumerate(trading_days):
         price = historical_prices[date_str]
+        
+        # Update simulation inputs for the current day
+        state_input["timestamp"] = date_str
+        state_input["start_of_day_equity"] = state_input["portfolio_equity"]
+        
+        # Update the current_price for stock positions in the inventory before invoking
+        for pos in state_input["portfolio_inventory"]:
+            if pos["type"] == "stock" and pos["symbol"] == ticker:
+                pos["current_price"] = price
+                
+        # Recalculate portfolio equity based on the new prices at the start of the day
+        position_value = 0.0
+        for pos in state_input["portfolio_inventory"]:
+            pos_qty = pos["quantity"]
+            pos_price = pos.get("current_price") if pos.get("current_price") is not None else pos.get("price", 0.0)
+            mult = 100 if pos.get("type") in ("call", "put") else 1
+            position_value += pos_qty * pos_price * mult
+        state_input["portfolio_equity"] = state_input["cash"] + position_value
         
         # Invoke the LangGraph app with the historical date.
         # We generate a unique thread ID per simulation date to isolate state.
@@ -92,14 +122,23 @@ def run_backtest(ticker="SPY", start_date="2022-01-01", end_date="2022-03-01", i
                 mock_rest_instance.get_bars.return_value = mock_bars_obj
                 
                 with patch('alpaca_trade_api.REST', return_value=mock_rest_instance):
-                    result = app.invoke({"ticker": ticker, "quantity": 1, "timestamp": date_str}, config=config)
+                    result = app.invoke(state_input, config=config)
             else:
-                result = app.invoke({"ticker": ticker, "quantity": 1, "timestamp": date_str}, config=config)
+                result = app.invoke(state_input, config=config)
                 
             signal = result.get("signal", "HOLD")
             confidence = result.get("confidence_score", 1.0)
             critique = result.get("evaluation_critique", "")
             spy_sma = result.get("spy_200_sma", 0.0)
+            
+            # Feed updated state outputs back into inputs for next step
+            state_input["cash"] = result.get("cash", state_input["cash"])
+            state_input["portfolio_inventory"] = result.get("portfolio_inventory", state_input["portfolio_inventory"])
+            state_input["portfolio_equity"] = result.get("portfolio_equity", state_input["portfolio_equity"])
+            state_input["regime"] = result.get("regime", state_input["regime"])
+            state_input["defensive_cash_mode"] = result.get("defensive_cash_mode", state_input["defensive_cash_mode"])
+            state_input["previous_iv"] = result.get("previous_iv", state_input["previous_iv"])
+            state_input["open_orders"] = result.get("open_orders", state_input["open_orders"])
             
         except Exception as e:
             logger.error("Error executing graph step", date=date_str, error=str(e))
@@ -108,27 +147,15 @@ def run_backtest(ticker="SPY", start_date="2022-01-01", end_date="2022-03-01", i
             critique = f"Execution error: {str(e)}"
             spy_sma = 0.0
             
-        # Execute trade decisions at the close of the day
-        equity_before = cash + shares * price
-        
+        # Log action and inventory for history
         action = "HOLD"
-        shares_traded = 0
-        
-        if signal == "BUY" and cash > 0:
-            # Buy as many shares as possible
-            shares_traded = int(cash // price)
-            if shares_traded > 0:
-                shares += shares_traded
-                cash -= shares_traded * price
-                action = f"BOUGHT {shares_traded} shares"
-        elif signal == "SELL" and shares > 0:
-            # Sell all shares
-            shares_traded = shares
-            cash += shares * price
-            shares = 0
-            action = f"SOLD {shares_traded} shares"
+        if result.get("status") == "COMPLETED" and signal == "BUY":
+            action = "BOUGHT"
+        elif result.get("liquidations"):
+            action = f"LIQUIDATED {len(result['liquidations'])} positions"
             
-        equity_after = cash + shares * price
+        shares_stock = sum(p["quantity"] for p in state_input["portfolio_inventory"] if p["type"] == "stock")
+        equity_after = state_input["portfolio_equity"]
         
         record = {
             "date": date_str,
@@ -138,8 +165,8 @@ def run_backtest(ticker="SPY", start_date="2022-01-01", end_date="2022-03-01", i
             "evaluator_confidence": confidence,
             "critique": critique,
             "action": action,
-            "shares": shares,
-            "cash": cash,
+            "shares": shares_stock,
+            "cash": state_input["cash"],
             "equity": equity_after
         }
         portfolio_history.append(record)
@@ -209,7 +236,8 @@ def run_backtest(ticker="SPY", start_date="2022-01-01", end_date="2022-03-01", i
     print("="*60)
     
     # Save results to a CSV file in the scratch folder for user inspection
-    csv_path = "C:/Users/apoll/.gemini/antigravity/brain/543d5a8e-0a33-47a3-9474-a87f235dbc79/scratch/backtest_results.csv"
+    conv_id = os.environ.get("CONVERSATION_ID", "97d0c3d5-41cf-4a5f-b1ef-94a5b77bda3c")
+    csv_path = f"C:/Users/apoll/.gemini/antigravity/brain/{conv_id}/scratch/backtest_results.csv"
     os.makedirs(os.path.dirname(csv_path), exist_ok=True)
     df.to_csv(csv_path, index=False)
     logger.info("Backtest simulation completed. Detailed results saved.", csv_path=csv_path)
