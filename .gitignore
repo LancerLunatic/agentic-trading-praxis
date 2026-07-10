@@ -6,3 +6,4 @@ venv/
 *.log
 scratch/
 backtest_results.csv
+.agents/
