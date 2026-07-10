@@ -6,6 +6,10 @@ from datetime import datetime
 from dotenv import load_dotenv
 from unittest.mock import MagicMock, patch
 
+# Mock SMTP globally to avoid network delays
+import smtplib
+smtplib.SMTP = MagicMock()
+
 # Add project root to sys.path
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 

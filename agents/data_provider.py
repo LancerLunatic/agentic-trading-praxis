@@ -320,6 +320,7 @@ def data_provider_node(state: AgentState) -> dict:
                         option_chain[contract_symbol] = {
                             "contract_symbol": contract_symbol,
                             "underlying_symbol": t,
+                            "underlying_price": ticker_volume_data.get(t, (actual_price, 0.0))[0],
                             "type": option_type,
                             "strike": strike,
                             "expiration_date": expiration,
@@ -368,6 +369,7 @@ def data_provider_node(state: AgentState) -> dict:
                     option_chain[c_symbol] = {
                         "contract_symbol": c_symbol,
                         "underlying_symbol": t,
+                        "underlying_price": t_price,
                         "type": "call",
                         "strike": strike,
                         "expiration_date": exp_date,
@@ -389,6 +391,7 @@ def data_provider_node(state: AgentState) -> dict:
                     option_chain[p_symbol] = {
                         "contract_symbol": p_symbol,
                         "underlying_symbol": t,
+                        "underlying_price": t_price,
                         "type": "put",
                         "strike": strike,
                         "expiration_date": exp_date,

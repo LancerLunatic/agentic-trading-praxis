@@ -55,8 +55,8 @@ def analyst_node(state: AgentState) -> dict:
             return None
         
         # Find option with strike closest to price_val
-        # Default to the strike of the first option if price_val is None
-        ref_price = price_val if price_val is not None else t_options[0].get("strike", 0.0)
+        # Default to the underlying price (or strike if not found) of the first option if price_val is None
+        ref_price = price_val if price_val is not None else t_options[0].get("underlying_price", t_options[0].get("strike", 0.0))
         atm_opt = min(t_options, key=lambda x: abs(x.get("strike", 0.0) - ref_price))
         
         # Get IV

@@ -30,9 +30,9 @@ The system consists of the following components integrated into a LangGraph work
 | 1 | State Schema Extension | Update AgentState in `core/state.py` with screening lists and portfolio variables | None | DONE |
 | 2 | High-Velocity Ingestion (R1) | Batch-fetch market data, filter top 75, query option chains, fetch VIX, SPY/XLU | M1 | DONE |
 | 3 | Quant Screening & Analyst (R2) | Implement VIX filter, IV velocity comparison, Call/Put filter, top 15 ranking, LLM proposal | M2 | DONE |
-| 4 | Risk & Portfolio Guardrails (R3) | Programmatic position sizing (2%), exposure (1.6x), stop loss/take profit, drawdown breaker, cancel orders | M3 | IN_PROGRESS (by Implementation Track: 18cdffbe-5044-414c-b1c2-b9fc246c1c2d) |
-| 5 | Execution, Slippage & Reporting (R4) | Submitting orders, slippage calculation, Daily Summary Report formatting | M4 | IN_PROGRESS (by Implementation Track: 18cdffbe-5044-414c-b1c2-b9fc246c1c2d) |
-| 6 | E2E Integration and Simulation | Harmonize `simulation.py` with graph's state and run 30-day simulation backtest | M5 | IN_PROGRESS (by Implementation Track: 18cdffbe-5044-414c-b1c2-b9fc246c1c2d) |
+| 4 | Risk & Portfolio Guardrails (R3) | Programmatic position sizing (2%), exposure (1.6x), stop loss/take profit, drawdown breaker, cancel orders | M3 | DONE (gen2 completion) |
+| 5 | Execution, Slippage & Reporting (R4) | Submitting orders, slippage calculation, Daily Summary Report formatting | M4 | DONE (gen2 completion) |
+| 6 | E2E Integration and Simulation | Harmonize `simulation.py` with graph's state and run 30-day simulation backtest | M5 | DONE (gen2 completion) |
 
 ## Interface Contracts
 - **`AgentState` Schema**:
