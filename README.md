@@ -1,6 +1,17 @@
 # Enterprise Agentic Trading System (Praxis)
 
+[![Live Demo](https://img.shields.io/badge/Live_Demo-View_Decision_Dashboard-7c6cff?style=for-the-badge&logo=googlecloud&logoColor=white)](REPLACE_WITH_CLOUD_RUN_URL)
+[![Built with LangGraph](https://img.shields.io/badge/Built_with-LangGraph-1c3d5a?style=for-the-badge)](https://langchain-ai.github.io/langgraph/)
+[![Deployed on Cloud Run](https://img.shields.io/badge/Deployed_on-Google_Cloud_Run-4285F4?style=for-the-badge&logo=googlecloud&logoColor=white)](REPLACE_WITH_CLOUD_RUN_URL)
+
 A production-grade, multi-agent quantitative finance and risk management framework built on **LangGraph**. The system orchestrates complex market analysis, structured derivatives pricing, portfolio-wide risk validation, and human-in-the-loop governance.
+
+> ### 🔴 Live Decision-Logic Dashboard
+> A **public, read-only dashboard** visualizes the multi-agent decision flow — the Reflector Loop, confidence gating, and risk guardrails — with interactive replays of sanitized trading decisions. No login required. Runs in simulation mode (no live trading).
+>
+> **▶️ [View the live dashboard](REPLACE_WITH_CLOUD_RUN_URL)**  _(link goes live after Cloud Run deploy — replace `REPLACE_WITH_CLOUD_RUN_URL` with the printed Service URL)_
+>
+> Built for technical review by hiring managers and the college Praxis committee. See [`DEPLOY_RUNBOOK.md`](./DEPLOY_RUNBOOK.md) for the deployment steps and [`DEPLOYMENT_PLAN.md`](./DEPLOYMENT_PLAN.md) for the full architecture rationale.
 
 ---
 
