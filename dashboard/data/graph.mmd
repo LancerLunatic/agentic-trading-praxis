@@ -1,0 +1,24 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	data_provider(data_provider)
+	analyst(analyst)
+	risk_manager(risk_manager)
+	execute_trade(execute_trade)
+	evaluator(evaluator)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> data_provider;
+	analyst --> evaluator;
+	data_provider --> analyst;
+	evaluator -. &nbsp;retry&nbsp; .-> analyst;
+	evaluator -. &nbsp;proceed&nbsp; .-> risk_manager;
+	risk_manager -.-> __end__;
+	risk_manager -.-> execute_trade;
+	execute_trade --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

@@ -1,0 +1,114 @@
+{
+  "_note": "Sanitized, pre-recorded sample runs for public review. No live account values, no live orders. Replace/extend with real sanitized traces exported from core/telemetry.py or simulation.py.",
+  "runs": [
+    {
+      "id": "run-001-proceed",
+      "title": "Bull regime — credit spread approved & executed",
+      "ticker": "AMD",
+      "regime": "BULL",
+      "final_decision": "SELL_PUT_SPREAD",
+      "confidence_score": 0.86,
+      "reflection_count": 0,
+      "steps": [
+        {
+          "node": "data_provider",
+          "summary": "Fetched price + option chain (±3 strikes), VIX, and historical bars.",
+          "detail": {
+            "vix_price": 15.9,
+            "current_price": 172.4,
+            "regime": "BULL",
+            "atm_iv": 0.41,
+            "previous_iv": 0.33,
+            "call_put_ratio": 1.34
+          }
+        },
+        {
+          "node": "analyst",
+          "summary": "IV velocity positive and Call/Put ≥ 1.10 → proposed short put vertical.",
+          "detail": {
+            "iv_velocity": 0.08,
+            "target_legs": [
+              {"type": "PUT", "action": "SELL", "strike": 165, "expiry": "30D"},
+              {"type": "PUT", "action": "BUY", "strike": 160, "expiry": "30D"}
+            ],
+            "credit_collected": 1.85,
+            "spread_width": 5.0,
+            "credit_pct_of_width": 0.37
+          }
+        },
+        {
+          "node": "evaluator",
+          "summary": "Confidence 0.86 ≥ 0.70 gate → proceed (no retry).",
+          "detail": {
+            "confidence_score": 0.86,
+            "evaluation_critique": "Thesis consistent with IV expansion and bullish skew. No anomalies.",
+            "decision": "proceed"
+          }
+        },
+        {
+          "node": "risk_manager",
+          "summary": "Passed all guardrails: sizing, portfolio delta, credit %, margin.",
+          "detail": {
+            "position_size_pct": 0.02,
+            "portfolio_delta": 148,
+            "portfolio_delta_limit": 1000,
+            "credit_pct_check": "0.37 >= 0.30 OK",
+            "margin_utilization": 0.41,
+            "margin_ceiling": 0.80,
+            "risk_approved": true
+          }
+        },
+        {
+          "node": "execute_trade",
+          "summary": "Mock executor submitted order; slippage recorded.",
+          "detail": {
+            "status": "FILLED",
+            "slippage": 0.02,
+            "execution_log": "Short put vertical 165/160 filled @ 1.83 credit (mock)."
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-002-retry-interrupt",
+      "title": "Low confidence → reflector retry → risk breach → human interrupt",
+      "ticker": "GME",
+      "regime": "BULL",
+      "final_decision": "HOLD_FOR_APPROVAL",
+      "confidence_score": 0.58,
+      "reflection_count": 2,
+      "steps": [
+        {
+          "node": "data_provider",
+          "summary": "Fetched chain + VIX; elevated IV but noisy signal.",
+          "detail": {"vix_price": 19.8, "current_price": 24.1, "regime": "BULL", "atm_iv": 0.92, "previous_iv": 0.88, "call_put_ratio": 1.05}
+        },
+        {
+          "node": "analyst",
+          "summary": "Proposed trade despite marginal Call/Put ratio.",
+          "detail": {"iv_velocity": 0.04, "note": "Call/Put 1.05 below 1.10 preference — weak edge."}
+        },
+        {
+          "node": "evaluator",
+          "summary": "Confidence 0.52 < 0.70 → retry back to analyst (reflection 1).",
+          "detail": {"confidence_score": 0.52, "evaluation_critique": "Call/Put ratio below threshold; edge unclear. Request re-analysis.", "decision": "retry"}
+        },
+        {
+          "node": "analyst",
+          "summary": "Re-analyzed with tighter strikes; confidence improves slightly.",
+          "detail": {"target_legs": [{"type": "CALL", "action": "SELL", "strike": 27}, {"type": "CALL", "action": "BUY", "strike": 30}]}
+        },
+        {
+          "node": "evaluator",
+          "summary": "Confidence 0.58 still < 0.70 but reflection_count reached 2 → proceed to risk.",
+          "detail": {"confidence_score": 0.58, "evaluation_critique": "Marginal. Defer final judgment to risk guardrails.", "decision": "proceed"}
+        },
+        {
+          "node": "risk_manager",
+          "summary": "Margin utilization would exceed 80% ceiling → INTERRUPT for human approval.",
+          "detail": {"margin_utilization": 0.87, "margin_ceiling": 0.80, "risk_approved": false, "interrupt": "GraphInterrupt: margin breach — awaiting user_approved."}
+        }
+      ]
+    }
+  ]
+}

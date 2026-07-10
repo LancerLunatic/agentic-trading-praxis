@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Agentic Trading Praxis — Decision Logic</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --border:#2a3340;
+    --text:#e6edf3; --muted:#9aa7b4; --accent:#7c6cff; --accent2:#5ad1a8;
+    --warn:#f0a35e; --danger:#f26d6d; --ok:#5ad1a8;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.55}
+  header{padding:28px 32px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#12172080,#0e1116)}
+  header h1{margin:0 0 6px;font-size:22px;letter-spacing:.2px}
+  header p{margin:0;color:var(--muted);font-size:14px;max-width:820px}
+  .badge{display:inline-block;font-size:11px;font-family:var(--mono);padding:3px 9px;border:1px solid var(--border);border-radius:999px;color:var(--accent2);margin-left:8px;vertical-align:middle}
+  main{max-width:1160px;margin:0 auto;padding:28px 32px 80px}
+  section{margin-bottom:40px}
+  h2{font-size:15px;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:18px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:880px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px}
+  .card h3{margin:0 0 6px;font-size:15px}
+  .card p{margin:0;color:var(--muted);font-size:13.5px}
+  .node-tag{font-family:var(--mono);font-size:11px;color:var(--accent);background:#221c46;padding:2px 7px;border-radius:6px}
+  .mermaid{background:#f7f8fc;border:1px solid var(--border);border-radius:12px;padding:26px;text-align:center}
+  /* High-contrast node styling overrides for the graph */
+  .mermaid .node rect,.mermaid .node polygon,.mermaid .node circle,.mermaid .node ellipse{fill:#eef0ff!important;stroke:#4b3fb0!important;stroke-width:1.5px!important}
+  .mermaid .node .nodeLabel,.mermaid .node span,.mermaid .node p{color:#1a1147!important;fill:#1a1147!important;font-weight:600!important}
+  .mermaid .edgeLabel{background:#f7f8fc!important;color:#1a1147!important}
+  .mermaid .edgeLabel rect{fill:#f7f8fc!important;opacity:.9!important}
+  .mermaid .edgeLabel .edgeLabel,.mermaid .edgeLabel span,.mermaid .edgeLabel p{color:#1a1147!important;fill:#1a1147!important;font-weight:600!important}
+  .mermaid .edgePath .path{stroke:#5a4fb5!important}
+  .mermaid marker{fill:#5a4fb5!important;stroke:#5a4fb5!important}
+  .runs{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px}
+  .run-btn{cursor:pointer;background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--text);transition:.15s;text-align:left;min-width:240px}
+  .run-btn:hover{border-color:var(--accent)}
+  .run-btn.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .run-btn .t{font-weight:600;display:block;margin-bottom:4px}
+  .run-btn .m{color:var(--muted);font-size:11.5px;font-family:var(--mono)}
+  .pill{display:inline-block;font-size:10.5px;font-family:var(--mono);padding:2px 7px;border-radius:999px;margin-right:6px}
+  .pill.buy,.pill.ok{background:#123528;color:var(--ok)}
+  .pill.warn{background:#3a2c15;color:var(--warn)}
+  .pill.danger{background:#3a1a1a;color:var(--danger)}
+  .timeline{border-left:2px solid var(--border);margin-left:10px;padding-left:22px}
+  .step{position:relative;margin-bottom:16px}
+  .step::before{content:"";position:absolute;left:-30px;top:4px;width:12px;height:12px;border-radius:50%;background:var(--accent);border:2px solid var(--bg)}
+  .step .head{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .step .head b{font-size:13.5px}
+  .step .sum{color:var(--muted);font-size:13px;margin-bottom:8px}
+  .step pre{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:13px;overflow:auto;font-family:var(--mono);font-size:12.5px;color:#dbe4ee;margin:0;line-height:1.5}
+  footer{color:#b7c2cf;font-size:13px;border-top:1px solid var(--border);padding:22px 32px;text-align:center}
+  a{color:var(--accent2)}
+  .disclaimer{background:#3a2c15;border:1px solid #5a4525;color:#f4d3a8;font-size:12.5px;border-radius:10px;padding:12px 14px;margin-bottom:24px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Agentic Trading Praxis <span class="badge">PUBLIC · READ-ONLY</span></h1>
+  <p>A multi-agent quantitative options system built on LangGraph. This dashboard exposes the decision logic — the reflector loop, confidence gating, and risk guardrails — for technical review. It runs in simulation mode; no live orders are placed.</p>
+</header>
+<main>
+  <div class="disclaimer">⚠️ Demonstration only. All figures are sanitized / simulated. This page does not connect to a brokerage and cannot place trades.</div>
+
+  <section>
+    <h2>Decision Flow (Reflector Loop)</h2>
+    <div class="mermaid" id="graph">Loading graph…</div>
+  </section>
+
+  <section>
+    <h2>The Agent Matrix</h2>
+    <div class="grid">
+      <div class="card"><h3><span class="node-tag">data_provider</span></h3><p>Fetches price + option chains (±3 strikes), VIX, and historical bars. Falls back to a self-contained Black-Scholes engine + mock executor when market credentials are absent.</p></div>
+      <div class="card"><h3><span class="node-tag">analyst</span></h3><p>Flags BEAR regime when VIX &gt; 20.50. Screens by IV velocity vs. prior snapshot and Call/Put ratio ≥ 1.10, ranks candidates, and proposes structured option legs.</p></div>
+      <div class="card"><h3><span class="node-tag">evaluator</span></h3><p>Guardrail LLM. If confidence &lt; 0.70 it routes back to the analyst (up to 3 reflections); otherwise it proceeds to risk.</p></div>
+      <div class="card"><h3><span class="node-tag">risk_manager</span></h3><p>Enforces 2% position sizing, ±1000 portfolio-delta limit, ≥30% credit-of-width, and an 80% margin ceiling. Interrupts for human approval on breach.</p></div>
+      <div class="card"><h3><span class="node-tag">execute_trade</span></h3><p>Submits orders (or mock), computes slippage, and dispatches a daily summary report.</p></div>
+      <div class="card"><h3>Safety &amp; Reliability</h3><p>Strict Pydantic schemas on every signal, Postgres-backed checkpointing for human-in-the-loop resume, and cost-conscious telemetry sampling.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Decision Replays</h2>
+    <div class="runs" id="runs"></div>
+    <div id="trace"></div>
+  </section>
+</main>
+<footer>
+  Agentic Trading Praxis · Built on <a href="https://langchain-ai.github.io/langgraph/" target="_blank" rel="noopener">LangGraph</a> · Rendered live from the compiled graph topology.
+</footer>
+
+<script>
+  mermaid.initialize({ startOnLoad:false, theme:"neutral", securityLevel:"loose", flowchart:{ nodeSpacing:55, rankSpacing:55 } });
+
+  async function loadGraph(){
+    try{
+      const def = await (await fetch("/api/graph")).text();
+      const el = document.getElementById("graph");
+      const { svg } = await mermaid.render("g", def);
+      el.innerHTML = svg;
+    }catch(e){ document.getElementById("graph").textContent = "Graph unavailable."; }
+  }
+
+  function pill(decision){
+    const d=(decision||"").toUpperCase();
+    if(d.includes("APPROVAL")||d.includes("HOLD")) return '<span class="pill warn">'+d+'</span>';
+    if(d.includes("SELL")||d.includes("BUY")) return '<span class="pill buy">'+d+'</span>';
+    return '<span class="pill">'+d+'</span>';
+  }
+
+  function renderTrace(run){
+    let h = '<div class="card"><h3>'+run.title+'</h3><p style="margin-bottom:14px">'
+      + pill(run.final_decision)
+      + '<span class="pill '+(run.confidence_score>=0.7?'ok':'warn')+'">confidence '+run.confidence_score+'</span>'
+      + '<span class="pill">'+(run.regime||'')+'</span>'
+      + '<span class="pill">reflections '+(run.reflection_count??0)+'</span></p>'
+      + '<div class="timeline">';
+    for(const s of run.steps){
+      h += '<div class="step"><div class="head"><span class="node-tag">'+s.node+'</span><b></b></div>'
+        + '<div class="sum">'+s.summary+'</div>'
+        + '<pre>'+JSON.stringify(s.detail,null,2)+'</pre></div>';
+    }
+    h += '</div></div>';
+    document.getElementById("trace").innerHTML = h;
+  }
+
+  async function loadRuns(){
+    const { runs } = await (await fetch("/api/runs")).json();
+    const wrap = document.getElementById("runs");
+    wrap.innerHTML = "";
+    runs.forEach((r,i)=>{
+      const b=document.createElement("div");
+      b.className="run-btn"+(i===0?" active":"");
+      b.innerHTML='<span class="t">'+r.title+'</span><span class="m">'+(r.ticker||'')+' · '+r.final_decision+' · conf '+r.confidence_score+'</span>';
+      b.onclick=async()=>{
+        document.querySelectorAll(".run-btn").forEach(x=>x.classList.remove("active"));
+        b.classList.add("active");
+        const full=await (await fetch("/api/runs/"+r.id)).json();
+        renderTrace(full);
+      };
+      wrap.appendChild(b);
+      if(i===0) b.click();
+    });
+  }
+
+  loadGraph();
+  loadRuns();
+</script>
+</body>
+</html>

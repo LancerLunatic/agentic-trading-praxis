@@ -1,0 +1,60 @@
+# Cloud Build pipeline — build the dashboard image, push to Artifact Registry,
+# and deploy to Cloud Run as a PUBLIC (unauthenticated) read-only demo.
+#
+# Substitutions (override at trigger time or via --substitutions):
+#   _REGION   : GCP region (e.g. us-central1)
+#   _REPO     : Artifact Registry repo name (e.g. praxis)
+#   _SERVICE  : Cloud Run service name (e.g. praxis-dashboard)
+#
+# Prereqs: Artifact Registry repo exists; Cloud Build SA has run.admin +
+# iam.serviceAccountUser (see runbook Step 6).
+
+substitutions:
+  _REGION: us-central1
+  _REPO: praxis
+  _SERVICE: praxis-dashboard
+
+images:
+  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${SHORT_SHA}"
+
+steps:
+  # 1. Build the container image
+  - name: gcr.io/cloud-builders/docker
+    id: Build
+    args:
+      - build
+      - -t
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${SHORT_SHA}"
+      - -t
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:latest"
+      - .
+
+  # 2. Push both tags
+  - name: gcr.io/cloud-builders/docker
+    id: Push
+    args:
+      - push
+      - --all-tags
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}"
+
+  # 3. Deploy to Cloud Run (public, scale-to-zero)
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: Deploy
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - "${_SERVICE}"
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --port=8080
+      - --memory=512Mi
+      - --cpu=1
+      - --min-instances=0
+      - --max-instances=3
+      - --set-env-vars=DASHBOARD_MODE=public-readonly
+
+options:
+  logging: CLOUD_LOGGING_ONLY
